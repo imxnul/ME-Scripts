@@ -1,4 +1,5 @@
 local API = require("api")
+local AURA = require("AuraManagement")
 API.SetMaxIdleTime(5)
 
 local prenewal = {
@@ -45,7 +46,6 @@ end
 
 local function useRitualShard()
   API.DoAction_Inventory1(ritualShard, 0, 1, API.OFF_ACT_GeneralInterface_route)
-	print("Ritual Shard time!")
   API.RandomSleep2(600, 300, 300)
 end
 
@@ -53,6 +53,7 @@ local function readRitualShard()
   local buffs = API.DeBuffbar_GetIDstatus(43358)
   if buffs.conv_text < 1 then
     useRitualShard()
+    print("Ritual Shard time!")
     return true
   end
   return false
@@ -61,7 +62,6 @@ end
 local function useExcali()
   API.RandomSleep2(4000, 1000, 1000)
   API.DoAction_Inventory1(36619, 0, 1, API.OFF_ACT_GeneralInterface_route)
-	print("Excalibur time!")
   API.RandomSleep2(4000, 1000, 1000)
 end
 
@@ -69,12 +69,13 @@ local function readExcalibur()
   local buffs = API.DeBuffbar_GetIDstatus(14632)
   if buffs.conv_text < 1 then
     useExcali()
+    print("Excalibur time!")
     return true
   end
   return false
 end
 
-while API.Read_LoopyLoop() do
+while API.Read_LoopyLoop(true) do
   local darkness = getBuff(30122)
   local prayren = getBuff(14695)
   local prayer = API.GetPrayPrecent()
@@ -90,9 +91,9 @@ while API.Read_LoopyLoop() do
   end
 
   -- Prayer restoration logic
- if prayer < math.random(50, 70) then
-    readRitualShard()
-  end
+ --if prayer < math.random(50, 70) then
+ --   readRitualShard()
+ -- end
 
  -- Emergency prayer
   if prayer < math.random(20, 40) then
@@ -125,5 +126,12 @@ while API.Read_LoopyLoop() do
     API.Write_LoopyLoop(false)
   end
 
-  doExtraActionButton()
+if API.LocalPlayer_IsInCombat_() then
+    API.RandomSleep2(600, 200, 400)
+else
+    if not isAuraActive() then
+        activateAura("penance")
+    end
+    doExtraActionButton()
+end
 end
