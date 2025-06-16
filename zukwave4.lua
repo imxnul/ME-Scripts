@@ -74,7 +74,7 @@ local function readExcalibur()
   return false
 end
 
-while API.Read_LoopyLoop(true) do
+while API.Read_LoopyLoop() do
   local darkness = getBuff(30122)
   local prayren = getBuff(14695)
   local prayer = API.GetPrayPrecent()
