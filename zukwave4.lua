@@ -53,7 +53,6 @@ local function readRitualShard()
   local buffs = API.DeBuffbar_GetIDstatus(43358)
   if buffs.conv_text < 1 then
     useRitualShard()
-    print("Ritual Shard time!")
     return true
   end
   return false
@@ -90,10 +89,10 @@ while API.Read_LoopyLoop(true) do
     end
   end
 
-  -- Prayer restoration logic
- --if prayer < math.random(50, 70) then
- --   readRitualShard()
- -- end
+--Prayer restoration logic
+ if prayer < math.random(50, 70) then
+    readRitualShard()
+  end
 
  -- Emergency prayer
   if prayer < math.random(20, 40) then
