@@ -46,6 +46,7 @@ end
 
 local function useRitualShard()
   API.DoAction_Inventory1(ritualShard, 0, 1, API.OFF_ACT_GeneralInterface_route)
+  print("Ritual Shard time!")
   API.RandomSleep2(600, 300, 300)
 end
 
@@ -61,6 +62,7 @@ end
 local function useExcali()
   API.RandomSleep2(4000, 1000, 1000)
   API.DoAction_Inventory1(36619, 0, 1, API.OFF_ACT_GeneralInterface_route)
+  print("Excalibur time!")
   API.RandomSleep2(4000, 1000, 1000)
 end
 
@@ -68,13 +70,12 @@ local function readExcalibur()
   local buffs = API.DeBuffbar_GetIDstatus(14632)
   if buffs.conv_text < 1 then
     useExcali()
-    print("Excalibur time!")
     return true
   end
   return false
 end
 
-while API.Read_LoopyLoop(true) do
+while API.Read_LoopyLoop() do
   local darkness = getBuff(30122)
   local prayren = getBuff(14695)
   local prayer = API.GetPrayPrecent()
@@ -89,7 +90,7 @@ while API.Read_LoopyLoop(true) do
     end
   end
 
---Prayer restoration logic
+  -- Prayer restoration logic
  if prayer < math.random(50, 70) then
     readRitualShard()
   end
@@ -102,12 +103,15 @@ while API.Read_LoopyLoop(true) do
   end
 
   -- Darkness ability
+  if API.LocalPlayer_IsInCombat_() then
+    API.RandomSleep2(600, 200, 400)
+else
   if not darkness.found or (darkness.found and darkness.remaining <= math.random(15, 75)) then
     if API.DoAction_Ability("Darkness", 1, API.OFF_ACT_GeneralInterface_route, false) then
-      API.RandomSleep2(300, 200, 200)
+      API.RandomSleep2(2400, 1800, 2000)
     end
   end
-
+end
   -- Excalibur healing
   if hp < math.random(4250, 6500) then
     readExcalibur()
@@ -124,6 +128,7 @@ while API.Read_LoopyLoop(true) do
   if prayer < math.random(5, 15) then
     API.Write_LoopyLoop(false)
   end
+
 
 if API.LocalPlayer_IsInCombat_() then
     API.RandomSleep2(600, 200, 400)
