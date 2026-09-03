@@ -277,6 +277,19 @@ local function hasKeys()
     return keyCount() > 0
 end
 
+local function inventoryFull()
+    local ok, spaces = pcall(function()
+        return Inventory:FreeSpaces()
+    end)
+    if ok and type(spaces) == "number" then
+        return spaces <= 0
+    end
+    local okFull, full = pcall(function()
+        return Inventory:IsFull()
+    end)
+    return okFull and full == true
+end
+
 local function hasGrimGem()
     local ok, found = pcall(function()
         return Inventory:Contains(GRIM_GEM_ID)
@@ -1394,6 +1407,11 @@ local function doStartEncounter()
         setState(STATE.FIGHT)
         return
     end
+    if inventoryFull() then
+        log("Inventory full — teleporting to Wars to bank")
+        leaveToWars()
+        return
+    end
     if not hasKeys() then
         log("Out of keys — teleporting to Wars")
         leaveToWars()
@@ -1483,6 +1501,11 @@ local function doFight()
 end
 
 local function proceedAfterLoot()
+    if inventoryFull() then
+        log("Inventory full — teleporting to Wars to bank")
+        leaveToWars()
+        return
+    end
     if GET_REAPER_ASSIGNMENT and cacheLoaded() and not hasReaperTask() then
         log("Reaper assignment is 0 — getting a new Magister task before the next kill")
         beginGetTask(atWars() and STATE.BANK or STATE.START_ENCOUNTER)
