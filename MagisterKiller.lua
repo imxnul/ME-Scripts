@@ -22,7 +22,7 @@ local ELVEN_SHARD_PERCENT = 60
 -- Redose overload when the buff is missing or has this many seconds left.
 local OVERLOAD_REFRESH_SECONDS = 20
 -- Wait this many ticks after first arriving in the arena before touching the obelisk.
-local ARENA_SETTLE_TICKS = 8
+local ARENA_SETTLE_TICKS = 5
 
 API.SetMaxIdleTime(10)
 API.Write_LoopyLoop(true)
@@ -102,6 +102,20 @@ local EXCALIBUR_HP = 65
 local EAT_HP = 50
 local OBELISK_HP = 70
 
+local COINS_ID = 995
+local LOOT_DISTANCE = 30
+-- Ticks to wait for drops to spawn, and to give up if a pile cannot be taken.
+local LOOT_SPAWN_TICKS = 8
+local LOOT_TIMEOUT_TICKS = 40
+
+-- useLootAll is set per call so Loot All only fires once per kill.
+local LOOT_OPTIONS = {
+    allowCoins = true,
+    coinMinAmount = 1,
+    allowStackablesAlreadyHeld = true,
+    lootAllWhenFull = true,
+}
+
 local MAGISTER_NAME = "The Magister"
 local GATE_NAME = "The First Gate"
 local OBELISK_NAME = "Soul obelisk"
@@ -141,11 +155,10 @@ local reaperTasksCompleted = 0
 local hadReaperTask = false
 local killCounted = false
 local magisterAttackedThisFight = false
+local lootAllSentThisKill = false
 local startTime = os.time()
 local bankAttempts = 0
 local emptyPresetStops = 0
-local lootOpenAttempted = false
-local lootOpenMethod = 0
 local deflectSentThisTrip = false
 local prayerOffSent = false
 local arenaSettled = false
@@ -171,10 +184,11 @@ local function setState(newState)
     currentState = newState
     stateEnteredTick = API.Get_tick()
     stateActionDone = false
-    lootOpenAttempted = false
-    lootOpenMethod = 0
     if newState == STATE.FIGHT then
         killCounted = false
+    end
+    if newState == STATE.LOOT then
+        lootAllSentThisKill = false
     end
     if newState == STATE.GET_TASK then
         clickedMagister = false
@@ -877,10 +891,10 @@ local function manageInstanceBuffs()
 end
 
 local function groundItems(distance)
-    distance = distance or 40
+    distance = distance or LOOT_DISTANCE
     local results = {}
-    local seenMem = {}
-    local function add(list, requireType3)
+    local seen = {}
+    local function add(list)
         if not list then
             return
         end
@@ -894,30 +908,22 @@ local function groundItems(distance)
             local obj = list[i]
             if obj then
                 local id = tonumber(obj.Id) or 0
-                local typ = tonumber(obj.Type)
-                if requireType3 and typ and typ ~= 3 then
-                    id = 0
-                end
                 local key = tostring(obj.Mem or obj.Unique_Id or id) .. ":" .. tostring(id)
-                if id > 0 and not seenMem[key] then
-                    seenMem[key] = true
+                if id > 0 and not seen[key] then
+                    seen[key] = true
                     results[#results + 1] = obj
                 end
             end
         end
     end
     pcall(function()
-        add(API.GetAllObjArray1({ -1 }, distance, { 3 }), false)
+        add(API.GetAllObjArray1({ -1 }, distance, { 3 }))
     end)
-    pcall(function()
-        add(API.ReadAllObjectsArray({ 3 }, { -1 }, {}), false)
-    end)
-    pcall(function()
-        add(API.ReadAllObjectsArray({ 3 }, {}, {}), false)
-    end)
-    pcall(function()
-        add(API.ReadAllObjectsArray({ -1 }, {}, {}), true)
-    end)
+    if #results == 0 then
+        pcall(function()
+            add(API.ReadAllObjectsArray({ 3 }, { -1 }, {}))
+        end)
+    end
     table.sort(results, function(a, b)
         return (tonumber(a.Distance) or 0) < (tonumber(b.Distance) or 0)
     end)
@@ -925,8 +931,8 @@ local function groundItems(distance)
 end
 
 local function groundLootIds(items)
-    local ids = { 995 }
-    local seen = { [995] = true }
+    local ids = { COINS_ID }
+    local seen = { [COINS_ID] = true }
     for i = 1, #items do
         local id = tonumber(items[i].Id)
         if id and id > 0 and not seen[id] then
@@ -937,85 +943,23 @@ local function groundLootIds(items)
     return ids
 end
 
-local function clickGroundItemToOpenLoot()
-    local items = groundItems(40)
+local function lootGroundItems(items)
+    items = items or groundItems(LOOT_DISTANCE)
+    if #items == 0 then
+        return false
+    end
     local ids = groundLootIds(items)
-    local tile = API.PlayerCoordfloat()
-    local first = items[1]
-    local firstId = first and first.Id or ids[1]
-    lootOpenMethod = lootOpenMethod + 1
-    local method = ((lootOpenMethod - 1) % 5) + 1
-    actionLog("LOOT: " .. tostring(#items) .. " ground items, try=" .. tostring(method)
-        .. " id=" .. tostring(firstId)
-        .. (first and first.Name and (" " .. tostring(first.Name)) or ""))
-
-    if method == 1 and #items > 0 then
-        if API.DoAction_G_Items1(0x2d, ids, 30) then
-            actionLog("LOOT sent: G_Items1 0x2d (open window)")
-            markActed()
-            return true
-        end
+    local opts = {}
+    for k, v in pairs(LOOT_OPTIONS) do
+        opts[k] = v
     end
-    if method == 2 then
-        if API.KeyboardPress then
-            API.KeyboardPress("\\", 0, 50)
-            actionLog("LOOT sent: KeyboardPress \\ (area loot)")
-            markActed()
-            return true
-        end
-        if API.KeyboardPress2 then
-            API.KeyboardPress2(0xDC, 40, 60)
-            actionLog("LOOT sent: KeyboardPress2 VK_OEM_5 (area loot)")
-            markActed()
-            return true
-        end
-    end
-    if method == 3 and #items > 0 then
-        if API.DoAction_G_Items1(0x45, ids, 30) then
-            actionLog("LOOT sent: G_Items1 0x45 (open window)")
-            markActed()
-            return true
-        end
-    end
-    if method == 4 then
-        if API.DoAction_Loot_w and API.DoAction_Loot_w(ids, 30, tile, 30) then
-            actionLog("LOOT sent: DoAction_Loot_w (open window)")
-            markActed()
-            return true
-        end
-        if API.DoAction_Loot_k then
-            API.DoAction_Loot_k(ids, 30, 28, 92, 0)
-            actionLog("LOOT sent: DoAction_Loot_k (open window)")
-            markActed()
-            return true
-        end
-    end
-    if method == 5 then
-        if first and API.DoAction_G_Items_Direct then
-            local route = API.OFF_ACT_GeneralObject_route0
-            if API.DoAction_G_Items_Direct(0x2d, route, first) then
-                actionLog("LOOT sent: G_Items_Direct 0x2d id=" .. tostring(firstId))
-                markActed()
-                return true
-            end
-        end
-        if API.DoAction_Loot_o then
-            local ok = API.DoAction_Loot_o(ids, 30, tile, 30, {
-                allowCoins = true,
-                coinMinAmount = 1,
-                useLootAll = false,
-                useKeybindToOpen = true,
-            })
-            if ok then
-                actionLog("LOOT sent: DoAction_Loot_o (open window)")
-                markActed()
-                return true
-            end
-        end
-    end
-    actionLog("LOOT failed: open method " .. tostring(method) .. " did not land")
+    -- Let it use loot-all once, then pick up pile by pile.
+    opts.useLootAll = not lootAllSentThisKill
+    lootAllSentThisKill = true
+    local ok = API.DoAction_Loot_o(ids, LOOT_DISTANCE, API.PlayerCoordfloat(), LOOT_DISTANCE, opts)
+    actionLog("LOOT sent: DoAction_Loot_o " .. tostring(#items) .. " piles ok=" .. tostring(ok))
     markActed()
-    return false
+    return ok
 end
 
 local function handleDialog()
@@ -1524,29 +1468,26 @@ local function doLoot()
         return
     end
 
-    if API.LootWindowOpen_2() then
-        if not stateActionDone then
-            if canAct(2) then
-                actionLog("LOOT sent: DoAction_LootAll_Button")
-                API.DoAction_LootAll_Button()
-                markActed()
-                stateActionDone = true
-                stateEnteredTick = API.Get_tick()
-            end
-            return
+    -- Loot All is worth exactly one click per kill. Repeats do nothing.
+    if API.LootWindowOpen_2() and not lootAllSentThisKill then
+        if canAct(2) then
+            actionLog("LOOT sent: DoAction_LootAll_Button")
+            API.DoAction_LootAll_Button()
+            lootAllSentThisKill = true
+            markActed()
         end
-        if ticksInState() < 3 then
-            return
-        end
-        proceedAfterLoot()
         return
     end
 
-    if ticksInState() < 24 then
-        if canAct(3) then
-            clickGroundItemToOpenLoot()
-            lootOpenAttempted = true
+    local items = groundItems(LOOT_DISTANCE)
+    if #items > 0 and ticksInState() < LOOT_TIMEOUT_TICKS then
+        if canAct(2) then
+            lootGroundItems(items)
         end
+        return
+    end
+
+    if #items == 0 and ticksInState() < LOOT_SPAWN_TICKS then
         return
     end
 
